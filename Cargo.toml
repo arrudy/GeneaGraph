@@ -1,7 +1,7 @@
 [package]
-name = "eframe_template"
+name = "ChmObl_front"
 version = "0.1.0"
-authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
+authors = ["Arkadiusz Rudy <arekrudy@student.agh.edu.pl>"]
 edition = "2021"
 include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]
 rust-version = "1.76"
@@ -13,15 +13,30 @@ targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
 [dependencies]
 egui = "0.29"
 eframe = { version = "0.29", default-features = false, features = [
-    "accesskit",     # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
+    #"accesskit",     # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
-    "persistence",   # Enable restoring app state when restarting the app.
+    #"persistence",   # Enable restoring app state when restarting the app.
 ] }
+getrandom = { version = "0.2", features = ["js"] }
+egui_graphs = { version = "0.22.0", features = ["events" ]}
+petgraph = { version = "0.6", default-features = false, features = [
+  "stable_graph",
+  "matrix_graph"
+] }
+crossbeam = { version = "0.8"}
+egui_extras = {version = "0.29.1", features = ["datepicker"]}
+reqwest = { version = "0.12", features = ["json"] } #HTTP client, "blocking" will never work on wasm32
+postage = "0.2.0"
+tokio = { version = "1", features = ["sync"] }
+web-sys = "0.3.76"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = {version = "0.4.38", features = ["serde"]}
 log = "0.4"
 
 # You only need serde if you want app persistence:
-serde = { version = "1", features = ["derive"] }
+#serde = { version = "1", features = ["derive"] }
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -31,6 +46,7 @@ env_logger = "0.11"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
 web-sys = "0.3.70" # to access the DOM (to hide the loading text)
+
 
 [profile.release]
 opt-level = 2 # fast and small wasm
