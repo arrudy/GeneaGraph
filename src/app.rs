@@ -1,6 +1,7 @@
+#[allow(unused_imports)]
 use std::{collections::{HashMap, HashSet}, sync::{Arc, Mutex}};
 
-use crossbeam::channel::{unbounded, bounded, Receiver, Sender};
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use egui::CollapsingHeader;
 use petgraph::stable_graph::StableGraph;
 
@@ -21,7 +22,7 @@ macro_rules! pretty_string {
 pub struct TemplateApp {
 
     c_person : person::Person,
-    c_isDead : bool,
+    c_is_dead : bool,
 
     g_person : person::Person,
 
@@ -43,7 +44,8 @@ pub struct TemplateApp {
     event_consumer: Receiver<egui_graphs::events::Event>,
 
     task_node_refresh : Option<Task<Result<Vec<person::Person>, Box<dyn std::error::Error>>>>,
-    task_conn_refresh : Option<Task<Result<Vec<person::Link>, Box<dyn std::error::Error>>>>
+    task_conn_refresh : Option<Task<Result<Vec<person::Link>, Box<dyn std::error::Error>>>>,
+    task_gperson_refresh : Option<Task<Result<person::Person, Box<dyn std::error::Error>>>>
 
 }
 
@@ -64,7 +66,7 @@ impl Default for TemplateApp {
                 birth_dt: chrono::naive::NaiveDate::from_ymd_opt(2024, 12, 6).unwrap(), 
                 death_dt: None,
                 country: String::new(), id: None},
-            c_isDead: false,
+            c_is_dead: false,
 
 
             g_person: person::Person{name : String::new(), last_name: String::new(), 
@@ -83,15 +85,16 @@ impl Default for TemplateApp {
             event_consumer : event_cons ,
             event_publisher : event_publ,
 
-            task_node_refresh: Some(Task::spawn(get_graph_nodes())),
-            task_conn_refresh: Some(Task::spawn(get_graph_conns()))
+            task_node_refresh: Some(Task::spawn(generic_get::<Vec<person::Person>>("/people".to_owned()))),
+            task_conn_refresh: Some(Task::spawn(generic_get::<Vec<person::Link>>("/relations".to_owned()))),
+            task_gperson_refresh: None
         }
     }
 }
 
 impl TemplateApp {
     /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
         Default::default()
@@ -354,7 +357,7 @@ fn draw_section_widget(&mut self, ui: &mut egui::Ui) {
             ui.label("Date of Birth");
             ui.add(egui_extras::DatePickerButton::new( &mut self.c_person.birth_dt).format("%d/%m/%Y").id_salt("date_bt_create"));
             });
-        if self.c_isDead == true
+        if self.c_is_dead == true
         {
             if self.c_person.death_dt.is_none()
             {
@@ -374,7 +377,7 @@ fn draw_section_widget(&mut self, ui: &mut egui::Ui) {
 
 
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.c_isDead, "isDead");
+            ui.checkbox(&mut self.c_is_dead, "isDead");
             });
         ui.horizontal(|ui| {
             ui.label("Country");
@@ -405,7 +408,7 @@ fn draw_section_widget(&mut self, ui: &mut egui::Ui) {
 
 fn refresh_nodes(&mut self)
 {
-    let mut graph : StableGraph<(),()>  = petgraph::stable_graph::StableGraph::new();
+    let graph : StableGraph<(),()>  = petgraph::stable_graph::StableGraph::new();
     let mut g : egui_graphs::Graph<(), ()> = egui_graphs::Graph::from(& graph);
     let mut node_map = HashMap::new();
 
@@ -492,7 +495,22 @@ fn refresh_layout(&mut self)
 
 fn refresh_gperson(&mut self)
 {
-    
+    web_sys::console::log_1(&"Person data retrieving...".into());
+
+    if let Some(Ok(result)) = self.task_gperson_refresh.as_mut().unwrap().take_output() {
+        web_sys::console::log_1(&"Person data retrieved, parsing".into());
+        if let Ok(person) = result
+        {
+
+            self.g_person = person;
+            self.task_gperson_refresh = None;
+        }
+        else {
+            web_sys::console::log_1(&"Person data parse problem!".into());
+            web_sys::console::log_1(&format!("{:?}", result).into());
+            self.task_gperson_refresh = None;
+        }
+    } 
 }
 
 
@@ -507,13 +525,17 @@ fn process_tasks(&mut self)
         self.refresh_conns();
     }
 
+    if self.task_gperson_refresh.is_some()
+    {
+        self.refresh_gperson();
+    }
 
 }
 
 fn refresh_graph(&mut self)
 {
-    self.task_node_refresh = Some(Task::spawn(get_graph_nodes()));
-    self.task_conn_refresh = Some(Task::spawn(get_graph_conns()));
+    self.task_node_refresh = Some(Task::spawn( generic_get::<Vec<person::Person>>("/people".to_owned())));
+    self.task_conn_refresh = Some(Task::spawn(generic_get::<Vec<person::Link>>("/relations".to_owned())));
 }
 
 
@@ -532,8 +554,53 @@ fn process_inputs(&mut self, ctx: &egui::Context)
             }
         );
         
-        self.g.add_edge(self.node_map[&link_id_src], self.node_map[&link_id_tgt],());
+        self.g.add_edge_with_label(self.node_map[&link_id_src], self.node_map[&link_id_tgt],(),"PARENT_OF".to_owned());
     }
+
+    if ctx.input(|i| i.key_pressed(egui::Key::Delete)) {
+
+        let edge_ids = self.g.selected_edges().to_vec();
+                
+        self.g.set_selected_edges(Vec::new());
+        
+        edge_ids.iter().for_each(|edge| {
+
+            if let Some((src,targ)) = self.g.edge_endpoints(*edge)
+            {
+                web_sys::console::log_1(&format!("deleting {:?} -> {:?}",src,targ).into());
+                
+
+                let id_src : u32 = self.node_index_id(src).unwrap();
+                let id_tgt : u32 = self.node_index_id(targ).unwrap();
+
+                wasm_bindgen_futures::spawn_local(
+                    async move{
+                    generic_delete(format!("/person/{}/child/{}",id_src,id_tgt)).await;
+                    });
+
+            }
+
+            self.g.remove_edge(*edge);
+            
+        });   
+        
+        let node_ids = self.g.selected_nodes().to_vec();
+        self.g.set_selected_nodes(Vec::new());
+
+        node_ids.iter().for_each(|node|{
+
+            let id_tgt = self.node_index_id(node.clone()).unwrap();
+            wasm_bindgen_futures::spawn_local(
+                async move{
+                generic_delete(format!("/person/{}",id_tgt)).await;
+                });
+
+            self.g.remove_node(*node);
+        });
+
+        
+        
+        }
 
 }
 
@@ -552,15 +619,18 @@ fn handle_events(&mut self) {
         
         match e
         {
-            egui_graphs::events::Event::NodeDeselect(payload) =>
-            {
-            }
+            //egui_graphs::events::Event::NodeDeselect(payload) =>
+            //{
+            //}
             egui_graphs::events::Event::NodeSelect(payload) =>
             {
                 let nodeid : petgraph::prelude::NodeIndex = petgraph::prelude::NodeIndex::new(payload.id);
 
                 self.id_src = self.id_tgt.clone();
-                self.id_tgt = self.NodeIndex_ID(nodeid).unwrap().to_string();
+                self.id_tgt = self.node_index_id(nodeid).unwrap().to_string();
+
+
+                self.task_gperson_refresh =  Some(Task::spawn(generic_get::<person::Person>( pretty_string!("/person/{}",self.id_tgt.clone()) )));
             }
             _ => {}
         }
@@ -574,7 +644,7 @@ fn handle_events(&mut self) {
         });
 }
 
-fn NodeIndex_ID(& self,target : petgraph::prelude::NodeIndex) -> Option<u32>
+fn node_index_id(& self,target : petgraph::prelude::NodeIndex) -> Option<u32>
     {
         if let Some( node ) = self.g.node(target.into())
         {
@@ -676,20 +746,6 @@ pub async fn create_link(id_src : u32, id_tgt : u32)
 
 
 
-pub async fn get_graph_nodes() -> Result<Vec<person::Person>, Box<dyn std::error::Error>> {
-    let client = reqwest::Client::new();
-
-    let res = client
-        .get(SERVER_ADDRESS.to_owned() + "/people")
-        .send()
-        .await?;
-
-    let body = res.text().await?;
-    let result: Vec<person::Person> = serde_json::from_str(&body)?;
-    Ok(result)
-}
-
-
 pub async fn generic_get<T>(path : String) -> Result<T, Box<dyn std::error::Error>>
 where
     T: serde::de::DeserializeOwned,
@@ -705,17 +761,23 @@ where
 }
 
 
-pub async fn get_graph_conns() -> Result<Vec<person::Link>, Box<dyn std::error::Error>>
+pub async fn generic_delete(path : String) 
 {
     let client = reqwest::Client::new();
     let res = client
-        .get(SERVER_ADDRESS.to_owned() + "/relations")
+        .delete(SERVER_ADDRESS.to_owned() + &path)
         .send()
-        .await?;
-    let body = res.text().await?;
-    let result: Vec<person::Link> = serde_json::from_str(&body)?;
-    Ok(result)
+        .await;
+
+    match res {
+        Ok(response) => {
+            if response.status().is_success() { web_sys::console::log_1(&"Deletion success".into()); } 
+            else { web_sys::console::log_1(&pretty_string!("Failed to send request: {}", response.status()).into()); }
+        }
+        Err(e) => {web_sys::console::log_1(&pretty_string!("Error occurred: {}", e).into());}
+    }
 }
+
 
 
 
