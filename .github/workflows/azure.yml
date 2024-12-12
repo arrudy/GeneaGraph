@@ -38,7 +38,7 @@ jobs:
         # will obviously return error 404 not found.
         run: ./trunk build --release --public-url $public_url
         env:
-          public_url: "https://salmon-pebble-03e252b03.4.azurestaticapps.net"
+          public_url: "https://purple-meadow-05b564103.4.azurestaticapps.net"
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
         with:
