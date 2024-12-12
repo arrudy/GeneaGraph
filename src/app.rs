@@ -9,7 +9,7 @@ use petgraph::stable_graph::StableGraph;
 mod settings;
 mod person;
 
-const SERVER_ADDRESS : &str = "http://127.0.0.1:5000";
+const SERVER_ADDRESS : &str = "http://chmobl-e2are7apgsdqd4g4.polandcentral-01.azurewebsites.net";
 const EVENTS_LIMIT: usize = 100;
 
 
