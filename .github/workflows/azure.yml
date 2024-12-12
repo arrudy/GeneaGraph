@@ -1,4 +1,4 @@
-name: Github Pages
+name: Azure Static
 
 # By default, runs if you push to main. keeps your deployed app in sync with main branch.
 on:
@@ -38,11 +38,12 @@ jobs:
         # will obviously return error 404 not found.
         run: ./trunk build --release --public-url $public_url
         env:
-          public_url: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          public_url: "https://salmon-pebble-03e252b03.4.azurestaticapps.net"
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: dist
+          branch: azure
           # this option will not maintain any history of your previous pages deployment
           # set to false if you want all page build to be committed to your gh-pages branch history
           single-commit: true
