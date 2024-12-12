@@ -3,6 +3,6 @@
 
 [serve]
 # The address to serve on.
-address = "192.168.1.11"
+address = "0.0.0.0"
 # The port to serve on.
-port = 53011
+port = 8080

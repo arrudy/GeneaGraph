@@ -21,12 +21,15 @@ macro_rules! pretty_string {
 
 pub struct TemplateApp {
 
+    show_help : bool,
+
     c_person : person::Person,
     c_is_dead : bool,
 
     g_person : person::Person,
 
-
+    query_result : Vec<HashMap<String,String>>,
+    resultbar_s : String,
 
     id_src: String,
     id_tgt : String,
@@ -45,7 +48,8 @@ pub struct TemplateApp {
 
     task_node_refresh : Option<Task<Result<Vec<person::Person>, Box<dyn std::error::Error>>>>,
     task_conn_refresh : Option<Task<Result<Vec<person::Link>, Box<dyn std::error::Error>>>>,
-    task_gperson_refresh : Option<Task<Result<person::Person, Box<dyn std::error::Error>>>>
+    task_gperson_refresh : Option<Task<Result<person::Person, Box<dyn std::error::Error>>>>,
+    task_query_result : Option<Task<Result<Vec<HashMap<String,String>>, Box<dyn std::error::Error>>>>
 
 }
 
@@ -58,6 +62,7 @@ impl Default for TemplateApp {
         let (event_publ, event_cons) = unbounded();
         Self {
             // Example stuff:
+            show_help : false,
 
             id_src : String::new(),
             id_tgt : String::new(),
@@ -74,6 +79,9 @@ impl Default for TemplateApp {
                 death_dt: None,
                 country: String::new(), id: None},
 
+            query_result : Vec::new(),
+            resultbar_s : "".to_owned(),
+
             g: egui_graphs::Graph::from( &g).into(),
             node_map : HashMap::new(),
 
@@ -87,7 +95,8 @@ impl Default for TemplateApp {
 
             task_node_refresh: Some(Task::spawn(generic_get::<Vec<person::Person>>("/people".to_owned()))),
             task_conn_refresh: Some(Task::spawn(generic_get::<Vec<person::Link>>("/relations".to_owned()))),
-            task_gperson_refresh: None
+            task_gperson_refresh: None,
+            task_query_result : None
         }
     }
 }
@@ -101,6 +110,8 @@ impl TemplateApp {
     }
 }
 
+
+
 impl eframe::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
@@ -108,7 +119,7 @@ impl eframe::App for TemplateApp {
         // Put your widgets into a `SidePanel`, `TopBottomPanel`, `CentralPanel`, `Window` or `Area`.
         // For inspiration and more examples, go to https://emilk.github.io/egui
 
-        
+
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
@@ -123,11 +134,44 @@ impl eframe::App for TemplateApp {
                         }
                     });
                     ui.add_space(16.0);
+                    
                 }
 
                 egui::widgets::global_theme_preference_buttons(ui);
+
+                if ui.button("Pomoc").clicked() {
+                    // Show a modal or open a section for the help text
+                    self.show_help = true; // Assume a mutable `show_help` boolean exists in your app's state
+                }
             });
         });
+
+        if self.show_help {
+            egui::Window::new("Help")
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label("Pomoc");
+                    ui.separator();
+                    ui.label("Sterowanie:");
+                    ui.label("- LPM: wybierz węzeł / połączenie");
+                    ui.label("- ŚPM (przytrzymać) przemieść graf na ekranie");
+                    ui.label("- LCtrl + ŚPM (obrót) przybliż/oddal graf");
+                    ui.label("- LAlt + C: Utwórz połączenie COUSIN_OF - 2 węzły");
+                    ui.label("- LAlt + J: Utwórz połączenie PARENT_OF - 2 węzły");
+                    ui.label("- Delete: Usuń węzeł / połączenie");
+                    ui.label("- LAlt + R: Odśwież graf");
+                    ui.label("");
+                    ui.label("Do utworzenia połączenia wymagane jest wybranie dwóch węzłów. Kierunek połączenia jest równy \nID źródła -> ID celu (menu Debug). ");
+                    ui.label("Query z zakładki Zapytania mogą wymagać wybranego min. 1 węzła. Więcej informacji znajduje się w dokumentacji.");
+                    ui.horizontal(|ui| {
+                        if ui.button("Close").clicked() {
+                            self.show_help = false; // Hide the help window
+                        }
+                    });
+                });
+        }
+        
 
 
         egui::SidePanel::right("right_panel")
@@ -142,9 +186,28 @@ impl eframe::App for TemplateApp {
                 });
             });
 
+        egui::TopBottomPanel::bottom("bottom").show(ctx, |ui|{
+
+            
+            CollapsingHeader::new("Wynik query").default_open(true).show(ui, |ui| {
+                if !self.resultbar_s.is_empty()
+                {
+                ui.label(self.resultbar_s.clone());
+                }
+                draw_table(ui, &self.query_result);
+            });
+
+            ui.separator();
+
+            /*ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                powered_by_egui_and_eframe(ui);
+                egui::warn_if_debug_build(ui);
+            });*/
+        });
+
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
-            ui.heading("eframe template");
+            ui.heading("Powered by egui");
 
 
             ui.separator();
@@ -183,12 +246,12 @@ impl eframe::App for TemplateApp {
             .with_styles(settings_style)
         );
 
+        
+        
 
+        
 
-            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                powered_by_egui_and_eframe(ui);
-                egui::warn_if_debug_build(ui);
-            });
+            
         });
         self.process_inputs(ctx);
         self.handle_events();
@@ -203,9 +266,9 @@ impl TemplateApp
 {
 
 fn draw_section_widget(&mut self, ui: &mut egui::Ui) {
-    CollapsingHeader::new("View Config")
+    CollapsingHeader::new("Konfiguracja")
     .show(ui, |ui| {
-        CollapsingHeader::new("Navigation").default_open(true).show(ui, |ui|{
+        CollapsingHeader::new("Ustawienia nawigacji").default_open(true).show(ui, |ui|{
             if ui
                 .checkbox(&mut self.settings_navigation.fit_to_screen_enabled, "fit_to_screen")
                 .changed()
@@ -220,21 +283,21 @@ fn draw_section_widget(&mut self, ui: &mut egui::Ui) {
             ui.add_enabled_ui(!self.settings_navigation.fit_to_screen_enabled, |ui| {
                 ui.vertical(|ui| {
                     ui.checkbox(&mut self.settings_navigation.zoom_and_pan_enabled, "zoom_and_pan");
-                    ui.label("Zoom with ctrl + mouse wheel, pan with middle mouse drag.");
-                }).response.on_disabled_hover_text("disable fit_to_screen to enable zoom_and_pan");
+                    ui.label("Przybliż z użyciem ctrl + obrót kółka myszy, przesuwaj z wciśniętym kółkiem myszu.");
+                }).response.on_disabled_hover_text("Wyłącz fit_to_screen aby móc włączyć zoom_and_pan");
             });
         });
 
         CollapsingHeader::new("Style").show(ui, |ui| {
             ui.checkbox(&mut self.settings_style.labels_always, "labels_always");
-            ui.label("Wheter to show labels always or when interacted only.");
+            ui.label("Pokazuj identyfikatory zawsze.");
         });
 
         CollapsingHeader::new("Interaction").show(ui, |ui| {
             if ui.checkbox(&mut self.settings_interaction.dragging_enabled, "dragging_enabled").clicked() && self.settings_interaction.dragging_enabled {
                 self.settings_interaction.node_clicking_enabled = true;
             };
-            ui.label("To drag use LMB click + drag on a node.");
+            ui.label("Przesuwaj zaznaczone węzły na ekranie z użyciem myszy.");
 
             ui.add_space(5.);
 
@@ -273,12 +336,12 @@ fn draw_section_widget(&mut self, ui: &mut egui::Ui) {
 
 
         ui.horizontal(|ui| {
-            ui.label("Source ID");
+            ui.label("ID źródła");
             ui.add(egui::TextEdit::singleline(&mut self.id_src).interactive(false));
             });
 
         ui.horizontal(|ui| {
-            ui.label("Target ID");
+            ui.label("ID celu");
             ui.add(egui::TextEdit::singleline(&mut self.id_tgt).interactive(false));
             });
 
@@ -301,33 +364,37 @@ fn draw_section_widget(&mut self, ui: &mut egui::Ui) {
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-    CollapsingHeader::new("Display").show(ui, |ui| {
+    CollapsingHeader::new("Wyświetl").default_open(true).show(ui, |ui| {
 
-        ui.label("Procured data");
+        ui.label("Zebrane dane o węźle");
         if self.g_person.id.is_some()
         {
         ui.horizontal(|ui| {
-            ui.label("Name");
+            ui.label("Imię");
             ui.add(egui::TextEdit::singleline(&mut self.g_person.name).interactive(false));
             });
         ui.horizontal(|ui| {
-            ui.label("Last Name");
+            ui.label("Nazwisko");
             ui.add(egui::TextEdit::singleline(&mut self.g_person.last_name).interactive(false));
             });
         ui.horizontal(|ui| {
-            ui.label("Date of Birth");
+            ui.label("Data urodzenia");
             ui.add(egui::TextEdit::singleline(&mut self.g_person.birth_dt.to_string()).interactive(false));
             //ui.add(egui_extras::DatePickerButton::new( &mut self.g_person.birth_dt).format("%d/%m/%Y").id_salt("date_bt_get"));
             });
         if self.g_person.death_dt.is_some()
         {
             ui.horizontal(|ui| {
-                ui.label("Date of Death");
+                ui.label("Data śmierci");
                 ui.add(egui::TextEdit::singleline(&mut self.g_person.death_dt.unwrap().to_string()).interactive(false));
                 });
         }
+        else
+        {
+            ui.label("Żywy");
+        }
         ui.horizontal(|ui| {
-            ui.label("Country");
+            ui.label("Kraj pochodzenia");
             ui.add(egui::TextEdit::singleline(&mut self.g_person.country).interactive(false));
             });
         }
@@ -342,31 +409,32 @@ fn draw_section_widget(&mut self, ui: &mut egui::Ui) {
     //
     ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    CollapsingHeader::new("Create").show(ui, |ui| {
+    CollapsingHeader::new("Utwórz").default_open(true).show(ui, |ui| {
 
-        ui.label("Create person");
+        ui.label("Utwórz osobę");
         ui.horizontal(|ui| {
-            ui.label("Name");
+            ui.label("Imię");
             ui.add(egui::TextEdit::singleline(&mut self.c_person.name));
             });
         ui.horizontal(|ui| {
-            ui.label("Last Name");
+            ui.label("Nazwisko");
             ui.add(egui::TextEdit::singleline(&mut self.c_person.last_name));
             });
         ui.horizontal(|ui| {
-            ui.label("Date of Birth");
+            ui.label("Data urodzenia");
             ui.add(egui_extras::DatePickerButton::new( &mut self.c_person.birth_dt).format("%d/%m/%Y").id_salt("date_bt_create"));
             });
         if self.c_is_dead == true
         {
             if self.c_person.death_dt.is_none()
             {
+                web_sys::console::log_1(&"Here comes the trouble, this should never display".into());
                 self.c_person.death_dt = Some(chrono::naive::NaiveDate::from_ymd_opt(2024, 12, 6).unwrap());
             }
 
             ui.horizontal(|ui| {
-                ui.label("Date of Death");
-                ui.add(egui_extras::DatePickerButton::new( &mut self.c_person.death_dt.unwrap()).format("%d/%m/%Y").id_salt("date_dt_create"));
+                ui.label("Data śmierci");
+                ui.add(egui_extras::DatePickerButton::new( &mut self.c_person.death_dt.as_mut().unwrap()).format("%d/%m/%Y").id_salt("date_dt_create"));
                 });
         }
         else
@@ -377,10 +445,10 @@ fn draw_section_widget(&mut self, ui: &mut egui::Ui) {
 
 
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.c_is_dead, "isDead");
+            ui.checkbox(&mut self.c_is_dead, "nie żyje");
             });
         ui.horizontal(|ui| {
-            ui.label("Country");
+            ui.label("Kraj pochodzenia");
             ui.add(egui::TextEdit::singleline(&mut self.c_person.country));
             });
 
@@ -399,6 +467,61 @@ fn draw_section_widget(&mut self, ui: &mut egui::Ui) {
 
 
             
+    });
+
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //
+    //                                                               QUERIES
+    //
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+    CollapsingHeader::new("Zapytania").default_open(true).show(ui, |ui| { 
+
+        
+
+    ui.horizontal(|ui| {
+        if ui.add(egui::Button::new("Odśwież graf")).clicked()
+        {
+
+            if self.task_conn_refresh.is_none() && self.task_node_refresh.is_none()
+            {
+                self.refresh_graph();
+            } 
+        }
+        });
+
+    ui.horizontal(|ui| {
+        ui.label("Przodkowie");
+        if ui.add(egui::Button::new("Query")).clicked()
+        {
+            let id_tgt = self.id_tgt.clone();
+
+            if self.task_query_result.is_none()
+            {
+            self.task_query_result = Some(Task::spawn( generic_get::< Vec<HashMap<String,String>> >(format!("/person/{}/ancestors",id_tgt.clone()))));
+            self.resultbar_s = format!("Przodkowie osoby id={}",id_tgt);
+            } 
+        }
+        });
+
+    ui.horizontal(|ui| {
+        ui.label("Najbliższy wspólny przodek");
+        if ui.add(egui::Button::new("Query")).clicked()
+        {
+            let id_tgt = self.id_tgt.clone();
+            let id_src = self.id_src.clone();
+
+            if self.task_query_result.is_none()
+            {
+            self.task_query_result = Some(Task::spawn( generic_get::< Vec<HashMap<String,String>> >(format!("/person/{}/nca/{}",id_src.clone(),id_tgt.clone()))));
+            self.resultbar_s = format!("Najbliższy wspólny przodek osób o id={} i id={}",id_src,id_tgt);
+            } 
+        }
+        });
+
     });
 
 
@@ -513,6 +636,28 @@ fn refresh_gperson(&mut self)
     } 
 }
 
+fn refresh_query(&mut self)
+{
+    web_sys::console::log_1(&"Query data retrieving...".into());
+
+    if let Some(Ok(result)) = self.task_query_result.as_mut().unwrap().take_output() {
+        web_sys::console::log_1(&"Query data retrieved, parsing".into());
+        if let Ok(table) = result
+        {
+
+            self.query_result = table;
+            self.task_query_result = None;
+        }
+        else {
+            web_sys::console::log_1(&"Query data parse problem!".into());
+            web_sys::console::log_1(&format!("{:?}", result).into());
+            show_toast(&format!("Porażka: {:?}.", result));
+            self.task_query_result = None;
+            self.query_result.clear();
+        }
+    } 
+}
+
 
 fn process_tasks(&mut self)
 {
@@ -530,6 +675,11 @@ fn process_tasks(&mut self)
         self.refresh_gperson();
     }
 
+    if self.task_query_result.is_some()
+    {
+        self.refresh_query();
+    }
+
 }
 
 fn refresh_graph(&mut self)
@@ -541,7 +691,18 @@ fn refresh_graph(&mut self)
 
 fn process_inputs(&mut self, ctx: &egui::Context)
 {
-    if ctx.input(|i| i.key_pressed(egui::Key::J)) && self.id_src.chars().count() > 0 && self.id_tgt.chars().count() > 0
+
+    if self.id_src.chars().count() > 0 && self.id_tgt.chars().count() > 0 {
+        if ctx.input(|i| i.modifiers.alt) 
+    {
+        
+
+    if ctx.input(|i| i.key_pressed(egui::Key::R))
+    {
+        self.refresh_graph()
+    }
+        
+    if ctx.input(|i| i.key_pressed(egui::Key::J)) 
     {
 
 
@@ -555,6 +716,24 @@ fn process_inputs(&mut self, ctx: &egui::Context)
         );
         
         self.g.add_edge_with_label(self.node_map[&link_id_src], self.node_map[&link_id_tgt],(),"PARENT_OF".to_owned());
+    }
+
+    if ctx.input(|i| i.key_pressed(egui::Key::C))
+    {
+
+
+        let link_id_src : u32 = self.id_src.parse().unwrap();
+        let link_id_tgt : u32 = self.id_tgt.parse().unwrap();
+
+        wasm_bindgen_futures::spawn_local(
+            async move{
+            create_link_cousin(link_id_src.clone(),link_id_tgt.clone()).await;
+            }
+        );
+        
+        self.g.add_edge_with_label(self.node_map[&link_id_src], self.node_map[&link_id_tgt],(),"COUSIN_OF".to_owned());
+    }}
+
     }
 
     if ctx.input(|i| i.key_pressed(egui::Key::Delete)) {
@@ -573,9 +752,19 @@ fn process_inputs(&mut self, ctx: &egui::Context)
                 let id_src : u32 = self.node_index_id(src).unwrap();
                 let id_tgt : u32 = self.node_index_id(targ).unwrap();
 
+                let mut relation = "child";
+
+                if let Some(graph_edge) =  self.g.edge(*edge)
+                {
+                    if graph_edge.label() == "COUSIN_OF"
+                    {
+                        relation = "cousin";
+                    }
+                }
+
                 wasm_bindgen_futures::spawn_local(
                     async move{
-                    generic_delete(format!("/person/{}/child/{}",id_src,id_tgt)).await;
+                    generic_delete(format!("/person/{}/{}/{}",id_src,relation,id_tgt)).await;
                     });
 
             }
@@ -692,6 +881,86 @@ impl<T: 'static> Task<T> {
 }
 
 
+pub fn draw_table(ui: &mut egui::Ui, data: & Vec<HashMap<String, String>>) {
+    if data.is_empty() {
+        ui.label("No data available.");
+        return;
+    }
+    //ui.label("Query result");
+
+    // Extract all unique keys (column headers) from the data
+    let mut column_headers: Vec<String> = data.iter()
+        .flat_map(|record| record.keys().cloned())
+        .collect();
+    column_headers.sort();
+    column_headers.dedup();
+
+    if let Some(pos) = column_headers.iter().position(|x| {
+        let xc : String = x.clone().to_ascii_lowercase();
+        xc == "id"
+    }) 
+    {
+        let element = column_headers.remove(pos); // Remove the element from its current position
+        column_headers.insert(0, element);       // Insert it at the first position
+    }
+
+    egui_extras::TableBuilder::new(ui)
+        .striped(true)
+        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+        //.column( egui_extras::Column::auto().resizable(true)) // Create one column per header
+        .columns(egui_extras::Column::remainder().resizable(true),column_headers.len())
+        .header(20.0, |mut header| {
+            for column_name in &column_headers {
+                header.col(|ui: &mut egui::Ui| {
+                    ui.heading(column_name);
+                });
+            }
+        })
+        .body(|mut body| {
+            for record in data {
+                body.row(30.0, |mut row| {
+                    for column_name in &column_headers {
+                        row.col(|ui| {
+                            if let Some(value) = record.get(column_name) {
+                                ui.label(value);
+                            } else {
+                                ui.label("NULL");
+                            }
+                        });
+                    }
+                });
+            }
+        });
+}
+
+use wasm_bindgen::JsCast;
+
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn show_toast(message: &str) {
+    // Create a new div element to act as the toast notification
+    let document = web_sys::window().unwrap().document().unwrap();
+    let toast = document.create_element("div").unwrap();
+    
+    // Set the content and style of the toast
+    toast.set_inner_html(message);
+    toast.set_attribute("style", "position: fixed; bottom: 20px; left: 20px; padding: 10px; background-color: rgba(0, 0, 0, 0.65); color: red; border-radius: 5px; z-index: 1000;").unwrap();
+
+    // Append the toast to the body
+    let body = document.body().unwrap();
+    body.append_child(&toast).unwrap();
+
+    // Optionally, remove the toast after a delay
+    let toast_clone = toast.clone();
+    let closure = wasm_bindgen::closure::Closure::wrap(Box::new(move || {
+        toast_clone.remove();
+    }) as Box<dyn Fn()>);
+
+    let _ =web_sys::window().unwrap().set_timeout_with_callback_and_timeout_and_arguments_0(closure.as_ref().unchecked_ref(), 4000 + TryInto::<i32>::try_into(message.len()*30).unwrap() );
+    closure.forget(); // `forget` ensures that the closure is not dropped prematurely
+}
+
+
+
 
 
 pub async fn create_node(c_person : person::Person)
@@ -715,6 +984,7 @@ match res {
             web_sys::console::log_1(&"Node creation success".into());
         } else {
             web_sys::console::log_1(&pretty_string!("Failed to send request: {}", response.status()).into());
+            show_toast(&format!("Porażka: {:?}. Należy odświeżyć graf", response.text().await));
             //println!("Failed to send request: {}", response.status());
         }
     }
@@ -738,7 +1008,30 @@ pub async fn create_link(id_src : u32, id_tgt : u32)
     match res {
         Ok(response) => {
             if response.status().is_success() { web_sys::console::log_1(&"Link creation success".into()); } 
-            else { web_sys::console::log_1(&pretty_string!("Failed to send request: {}", response.status()).into()); }
+            else { web_sys::console::log_1(&pretty_string!("Failed to send request: {}", response.status()).into()); 
+            show_toast(&format!("Porażka: {:?}. Należy odświeżyć graf", response.text().await));
+        }
+        }
+        Err(e) => {
+            web_sys::console::log_1(&pretty_string!("Error occurred: {}", e).into());
+        }
+    }
+}
+
+pub async fn create_link_cousin(id_p1 : u32, id_p2 : u32)
+{
+    let client = reqwest::Client::new();
+
+    let res = 
+        client
+            .post(SERVER_ADDRESS.to_owned() + &pretty_string!("/person/{}/cousin/{}",id_p1,id_p2) ) // Replace with your endpoint URL
+            .send().await;
+    
+    match res {
+        Ok(response) => {
+            if response.status().is_success() { web_sys::console::log_1(&"Cousin link creation success".into()); } 
+            else { web_sys::console::log_1(&pretty_string!("Failed to send request: {}", response.status()).into()); 
+            show_toast(&format!("Porażka: {:?}. Należy odświeżyć graf", response.text().await));}
         }
         Err(e) => {web_sys::console::log_1(&pretty_string!("Error occurred: {}", e).into());}
     }
@@ -777,24 +1070,6 @@ pub async fn generic_delete(path : String)
         Err(e) => {web_sys::console::log_1(&pretty_string!("Error occurred: {}", e).into());}
     }
 }
-
-
-
-
-fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label("Powered by ");
-        ui.hyperlink_to("egui", "https://github.com/emilk/egui");
-        ui.label(" and ");
-        ui.hyperlink_to(
-            "eframe",
-            "https://github.com/emilk/egui/tree/master/crates/eframe",
-        );
-        ui.label(".");
-    });
-}
-
 
 
 

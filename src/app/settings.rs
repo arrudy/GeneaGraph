@@ -1,3 +1,5 @@
+#[allow(dead_code)]
+
 pub struct SettingsInteraction {
     pub dragging_enabled: bool,
     pub node_clicking_enabled: bool,
@@ -35,7 +37,7 @@ impl Default for SettingsNavigation {
     fn default() -> Self {
         Self {
             screen_padding: 0.3,
-            zoom_speed: 0.1,
+            zoom_speed: 0.02,
             fit_to_screen_enabled: false,
             zoom_and_pan_enabled: true,
         }
