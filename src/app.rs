@@ -9,7 +9,7 @@ use petgraph::stable_graph::StableGraph;
 mod settings;
 mod person;
 
-const SERVER_ADDRESS : &str = "http://chmobl-e2are7apgsdqd4g4.polandcentral-01.azurewebsites.net";
+const SERVER_ADDRESS : &str = "https://chmobl-e2are7apgsdqd4g4.polandcentral-01.azurewebsites.net";
 const EVENTS_LIMIT: usize = 100;
 
 
@@ -1046,6 +1046,8 @@ where
     let client = reqwest::Client::new();
     let res = client
         .get(SERVER_ADDRESS.to_owned() + &path)
+        .header("access-control-allow-methods", "GET, OPTIONS")
+        .header("access-control-allow-origin", "*")
         .send()
         .await?;
     let body = res.text().await?;
